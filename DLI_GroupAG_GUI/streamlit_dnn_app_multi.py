@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, roc_auc_score, classification_report, confusion_matrix, ConfusionMatrixDisplay
-from sklearn.metrics import precision_score, roc_curve
+from sklearn.metrics import precision_score, roc_curve, precision_recall_curve
 
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout
@@ -120,6 +120,7 @@ if page == "1️⃣ Train & Evaluate DNN":
             auc = roc_auc_score(y_test, y_prob)
             precision = precision_score(y_test, y_pred)
             fpr, tpr, _ = roc_curve(y_test, y_prob)
+            prec, rec, _ = precision_recall_curve(y_test, y_prob)
 
             st.success("✅ Model trained and evaluated!")
             st.metric("Accuracy", f"{acc:.4f}")
@@ -158,6 +159,15 @@ if page == "1️⃣ Train & Evaluate DNN":
             ax_roc.set_title("ROC Curve")
             ax_roc.legend()
             st.pyplot(fig_roc)
+
+            # Precision-Recall Curve plot
+            fig_pr, ax_pr = plt.subplots()
+            ax_pr.plot(rec, prec, marker='.', label='PR Curve')
+            ax_pr.set_xlabel('Recall')
+            ax_pr.set_ylabel('Precision')
+            ax_pr.set_title('Precision-Recall Curve')
+            ax_pr.legend()
+            st.pyplot(fig_pr)
 
             # Save objects in session_state
             st.session_state.MODEL = MODEL
