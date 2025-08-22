@@ -19,9 +19,6 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout
 
 from urllib.parse import urlparse
-import whois
-import socket
-import datetime
 
 def extract_features_from_url(url: str, feature_columns: list):
     parsed = urlparse(url)
@@ -30,9 +27,11 @@ def extract_features_from_url(url: str, feature_columns: list):
 
     features = {}
 
-    # ---------------- Basic string features ----------------
+    # Basic lengths
     features["length_url"] = len(url)
     features["length_hostname"] = len(hostname)
+
+    # Character counts
     features["ip"] = 1 if hostname.replace(".", "").isdigit() else 0
     features["nb_dots"] = url.count(".")
     features["nb_hyphens"] = url.count("-")
@@ -54,59 +53,22 @@ def extract_features_from_url(url: str, feature_columns: list):
     features["nb_www"] = url.lower().count("www")
     features["nb_com"] = url.lower().count(".com")
     features["nb_dslash"] = url.count("//")
+
+    # Tokens
     features["http_in_path"] = 1 if "http" in path else 0
     features["https_token"] = 1 if "https" in url[8:] else 0
+
+    # Ratios
     features["ratio_digits_url"] = sum(c.isdigit() for c in url) / len(url)
     features["ratio_digits_host"] = sum(c.isdigit() for c in hostname) / max(1, len(hostname))
 
-    # ---------------- WHOIS features ----------------
-    try:
-        domain_info = whois.whois(hostname)
-        if domain_info:
-            features["whois_registered_domain"] = 1
-            if isinstance(domain_info.creation_date, list):
-                creation_date = domain_info.creation_date[0]
-            else:
-                creation_date = domain_info.creation_date
-            if isinstance(domain_info.expiration_date, list):
-                expiration_date = domain_info.expiration_date[0]
-            else:
-                expiration_date = domain_info.expiration_date
-
-            if creation_date and expiration_date:
-                features["domain_registration_length"] = (expiration_date - creation_date).days
-            else:
-                features["domain_registration_length"] = 0
-            if creation_date:
-                features["domain_age"] = (datetime.datetime.now() - creation_date).days
-            else:
-                features["domain_age"] = 0
-        else:
-            features["whois_registered_domain"] = 0
-            features["domain_registration_length"] = 0
-            features["domain_age"] = 0
-    except Exception:
-        features["whois_registered_domain"] = 0
-        features["domain_registration_length"] = 0
-        features["domain_age"] = 0
-
-    # ---------------- DNS record ----------------
-    try:
-        socket.gethostbyname(hostname)
-        features["dns_record"] = 1
-    except Exception:
-        features["dns_record"] = 0
-
-    # ---------------- Placeholder web traffic ----------------
-    features["web_traffic"] = 0
-
-    # ---------------- Fill missing ----------------
+    # Simple placeholders for complex features
     for col in feature_columns:
         if col not in features:
             features[col] = 0
 
+    # Return in correct column order
     return pd.DataFrame([features])[feature_columns]
-
 
 st.set_page_config(page_title="Phishing Detection – DNN", layout="wide")
 
@@ -196,22 +158,14 @@ if page == "1️⃣ Train & Evaluate DNN":
 # ---------------------- Page 2 ----------------------
 elif page == "2️⃣ Detect URL":
     st.title("🔗 Detect Phishing URL")
-    st.write("Enter a URL to check if it's phishing or legitimate.")
-
     url_input = st.text_input("Enter URL:")
+
     if st.button("Check URL"):
-        if "MODEL" not in st.session_state or "SCALER" not in st.session_state or "FEATURE_COLUMNS" not in st.session_state:
-            st.warning("⚠️ Please train the DNN first on Page 1.")
+        if "MODEL" not in st.session_state:
+            st.warning("⚠️ Please train the model first on Page 1.")
         else:
-            MODEL = st.session_state.MODEL
-            SCALER = st.session_state.SCALER
-            FEATURE_COLUMNS = st.session_state.FEATURE_COLUMNS
-
-            # Use full extractor
-            df_features = extract_features_from_url(url_input, FEATURE_COLUMNS)
-
-            X_scaled = SCALER.transform(df_features.values)
-            prob = MODEL.predict(X_scaled, verbose=0).ravel()[0]
+            df_features = extract_features_from_url(url_input, st.session_state.FEATURE_COLUMNS)
+            X_scaled = st.session_state.SCALER.transform(df_features.values)
+            prob = st.session_state.MODEL.predict(X_scaled, verbose=0).ravel()[0]
             pred = "Phishing" if prob > 0.5 else "Legitimate"
-
             st.write(f"Prediction: **{pred}** (prob={prob:.4f})")
