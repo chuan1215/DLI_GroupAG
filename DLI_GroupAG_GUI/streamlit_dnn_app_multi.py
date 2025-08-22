@@ -18,6 +18,96 @@ from sklearn.metrics import accuracy_score, roc_auc_score, classification_report
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout
 
+from urllib.parse import urlparse
+import whois
+import socket
+import datetime
+
+def extract_features_from_url(url: str, feature_columns: list):
+    parsed = urlparse(url)
+    hostname = parsed.netloc
+    path = parsed.path
+
+    features = {}
+
+    # ---------------- Basic string features ----------------
+    features["length_url"] = len(url)
+    features["length_hostname"] = len(hostname)
+    features["ip"] = 1 if hostname.replace(".", "").isdigit() else 0
+    features["nb_dots"] = url.count(".")
+    features["nb_hyphens"] = url.count("-")
+    features["nb_at"] = url.count("@")
+    features["nb_qm"] = url.count("?")
+    features["nb_and"] = url.count("&")
+    features["nb_or"] = url.count("|")
+    features["nb_eq"] = url.count("=")
+    features["nb_underscore"] = url.count("_")
+    features["nb_tilde"] = url.count("~")
+    features["nb_percent"] = url.count("%")
+    features["nb_slash"] = url.count("/")
+    features["nb_star"] = url.count("*")
+    features["nb_colon"] = url.count(":")
+    features["nb_comma"] = url.count(",")
+    features["nb_semicolumn"] = url.count(";")
+    features["nb_dollar"] = url.count("$")
+    features["nb_space"] = url.count(" ")
+    features["nb_www"] = url.lower().count("www")
+    features["nb_com"] = url.lower().count(".com")
+    features["nb_dslash"] = url.count("//")
+    features["http_in_path"] = 1 if "http" in path else 0
+    features["https_token"] = 1 if "https" in url[8:] else 0
+    features["ratio_digits_url"] = sum(c.isdigit() for c in url) / len(url)
+    features["ratio_digits_host"] = sum(c.isdigit() for c in hostname) / max(1, len(hostname))
+
+    # ---------------- WHOIS features ----------------
+    try:
+        domain_info = whois.whois(hostname)
+        if domain_info:
+            features["whois_registered_domain"] = 1
+            if isinstance(domain_info.creation_date, list):
+                creation_date = domain_info.creation_date[0]
+            else:
+                creation_date = domain_info.creation_date
+            if isinstance(domain_info.expiration_date, list):
+                expiration_date = domain_info.expiration_date[0]
+            else:
+                expiration_date = domain_info.expiration_date
+
+            if creation_date and expiration_date:
+                features["domain_registration_length"] = (expiration_date - creation_date).days
+            else:
+                features["domain_registration_length"] = 0
+            if creation_date:
+                features["domain_age"] = (datetime.datetime.now() - creation_date).days
+            else:
+                features["domain_age"] = 0
+        else:
+            features["whois_registered_domain"] = 0
+            features["domain_registration_length"] = 0
+            features["domain_age"] = 0
+    except Exception:
+        features["whois_registered_domain"] = 0
+        features["domain_registration_length"] = 0
+        features["domain_age"] = 0
+
+    # ---------------- DNS record ----------------
+    try:
+        socket.gethostbyname(hostname)
+        features["dns_record"] = 1
+    except Exception:
+        features["dns_record"] = 0
+
+    # ---------------- Placeholder web traffic ----------------
+    features["web_traffic"] = 0
+
+    # ---------------- Fill missing ----------------
+    for col in feature_columns:
+        if col not in features:
+            features[col] = 0
+
+    return pd.DataFrame([features])[feature_columns]
+
+
 st.set_page_config(page_title="Phishing Detection – DNN", layout="wide")
 
 def _prepare_dataframe(df: pd.DataFrame):
@@ -106,7 +196,7 @@ if page == "1️⃣ Train & Evaluate DNN":
 # ---------------------- Page 2 ----------------------
 elif page == "2️⃣ Detect URL":
     st.title("🔗 Detect Phishing URL")
-    st.write("Enter a URL to check if it's phishing or legitimate (toy demo).")
+    st.write("Enter a URL to check if it's phishing or legitimate.")
 
     url_input = st.text_input("Enter URL:")
     if st.button("Check URL"):
@@ -117,20 +207,8 @@ elif page == "2️⃣ Detect URL":
             SCALER = st.session_state.SCALER
             FEATURE_COLUMNS = st.session_state.FEATURE_COLUMNS
 
-            # Simple placeholder feature extraction (toy demo)
-            features = {
-                "url_length": len(url_input),
-                "count_digits": sum(c.isdigit() for c in url_input),
-                "count_hyphens": url_input.count("-"),
-                "count_at": url_input.count("@"),
-                "https": 1 if "https" in url_input else 0
-            }
-            # Align with model features
-            df_features = pd.DataFrame([features])
-            for col in FEATURE_COLUMNS:
-                if col not in df_features.columns:
-                    df_features[col] = 0
-            df_features = df_features[FEATURE_COLUMNS]
+            # Use full extractor
+            df_features = extract_features_from_url(url_input, FEATURE_COLUMNS)
 
             X_scaled = SCALER.transform(df_features.values)
             prob = MODEL.predict(X_scaled, verbose=0).ravel()[0]
