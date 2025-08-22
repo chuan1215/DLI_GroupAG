@@ -76,8 +76,8 @@ def _prepare_dataframe(df: pd.DataFrame):
     if "status" in df.columns:
         df = df.copy()
         df["Label"] = df["status"].map({"legitimate": 0, "phishing": 1})
-        drop_cols = [c for c in ["url", "status"] if c in df.columns]
-        df = df.drop(columns=drop_cols)
+        # Drop only raw url and status, keep all other numeric features
+        df = df.drop(columns=["url", "status"], errors="ignore")
     if "Label" not in df.columns:
         raise ValueError("Dataset must include 'status' (legitimate/phishing) or 'Label' (0/1).")
     X = df.drop(columns=["Label"]).values
